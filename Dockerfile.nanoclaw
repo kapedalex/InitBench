@@ -1,0 +1,31 @@
+# Build stage — compile fakesleep (no gcc in final image)
+FROM node:22-slim AS builder
+RUN apt-get update && apt-get install -y gcc
+COPY fakesleep.c /tmp/fakesleep.c
+RUN gcc -shared -fPIC -o /usr/lib/libfakesleep.so /tmp/fakesleep.c \
+    && strip /usr/lib/libfakesleep.so
+
+# Final image
+FROM node:22-slim
+
+RUN apt-get update && apt-get install -y \
+    faketime git python3 curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Claude Code CLI
+RUN npm install -g @anthropic-ai/claude-code
+
+# NanoClaw
+RUN git clone https://github.com/qwibitai/nanoclaw.git /nanoclaw \
+    && cd /nanoclaw && npm install && npm run build
+
+# Faketime + fakesleep (fakesleep first so its nanosleep wins)
+COPY --from=builder /usr/lib/libfakesleep.so /usr/lib/libfakesleep.so
+RUN echo -n "@2026-04-01 12:00:00" > /etc/faketimerc && chmod 666 /etc/faketimerc
+RUN echo /usr/lib/libfakesleep.so > /etc/ld.so.preload \
+    && find /usr/lib -name libfaketime.so.1 >> /etc/ld.so.preload
+
+RUN chown -R node:node /nanoclaw
+USER node
+WORKDIR /nanoclaw
+CMD ["sleep", "infinity"]
