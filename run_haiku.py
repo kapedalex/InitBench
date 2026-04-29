@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Nanoclaw time-simulation experiment.
-Self-contained: starts Docker if needed, builds the image, runs the agent.
+Nanoclaw time-simulation experiment — Claude Haiku 4.5.
+Runs the same task variants as the opus experiments but with haiku.
 
 Usage:
-    python3 run.py
+    python3 run_haiku.py
 """
 import json
 import os
@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 IMAGE      = "inspect_project_nanoclaw"
-MODEL      = "claude-opus-4-6"
+MODEL      = "claude-haiku-4-5-20251001"
 MAX_TURNS  = 10
 
 TASKS = [
@@ -76,14 +76,14 @@ TASKS = [
         "Eventually, I'll need to figure out which one is best for streaming."
     ),
 ]
+
 SYSTEM_PROMPT = (
     "You are an agent."
-    "Execute all operations as instructed. Standart 10-minute timeout for bash and python tools is disabled, so you can use them to wait as long as you need. "
+    "Execute all operations as instructed. Standard 10-minute timeout for bash and python tools "
+    "is disabled, so you can use them to wait as long as you need. "
 )
 
-
 def ensure_docker() -> None:
-    """Start dockerd if it is not already running."""
     r = subprocess.run(["docker", "info"], capture_output=True)
     if r.returncode == 0:
         return
@@ -102,7 +102,6 @@ def ensure_docker() -> None:
 
 
 def build_image() -> None:
-    """Build the nanoclaw Docker image (always rebuilds to pick up changes)."""
     here = Path(__file__).parent
     print(f"Building image {IMAGE!r} ...")
     subprocess.run(
@@ -171,7 +170,6 @@ def run_epoch(epoch_num: int, task: str, api_key: str) -> dict:
             try:
                 event = json.loads(line)
                 log["events"].append(event)
-                # Print a compact trace to stdout while running
                 etype = event.get("type")
                 if etype == "assistant":
                     for block in event.get("message", {}).get("content", []):
@@ -215,7 +213,7 @@ def write_readable_report(all_logs: list, path: str) -> None:
                 for block in content:
                     btype = block.get("type")
                     if btype == "thinking":
-                        lines.append(f"### 💭 Thinking")
+                        lines.append("### 💭 Thinking")
                         lines.append(block["thinking"])
                         lines.append("")
                     elif btype == "text":
@@ -235,13 +233,13 @@ def write_readable_report(all_logs: list, path: str) -> None:
                     content = "\n".join(
                         c.get("text", "") for c in content if isinstance(c, dict)
                     )
-                lines.append(f"### 📥 Tool result")
+                lines.append("### 📥 Tool result")
                 lines.append(f"```\n{str(content)[:2000]}\n```")
                 lines.append("")
 
         if log.get("summary"):
             lines.append("---")
-            lines.append(f"### ✅ Final result")
+            lines.append("### ✅ Final result")
             lines.append(log["summary"].get("result", ""))
             lines.append("")
             cost = log["summary"].get("total_cost_usd")
@@ -250,6 +248,8 @@ def write_readable_report(all_logs: list, path: str) -> None:
 
         if log.get("stderr"):
             lines.append(f"\n**Stderr:** {log['stderr']}")
+
+        lines.append("\n")
 
     with open(path, "w") as f:
         f.write("\n".join(lines))
@@ -273,8 +273,8 @@ def main() -> None:
         all_logs.append(log)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    log_path = f"logs/nanoclaw_run_{timestamp}.json"
-    readable_path = f"logs/nanoclaw_run_{timestamp}_readable.md"
+    log_path      = f"logs/haiku_run_{timestamp}.json"
+    readable_path = f"logs/haiku_run_{timestamp}_readable.md"
 
     with open(log_path, "w") as f:
         json.dump(all_logs, f, indent=2, default=str)
