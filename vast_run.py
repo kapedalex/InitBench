@@ -1,8 +1,5 @@
-#!/usr/bin/env python3
 """
 VAST.ai runner: launches GPU instance, runs patched experiments, downloads logs, destroys instance.
-Follows VAST_AI_RUNBOOK.md. Uses nohup + HTTP polling instead of WebSocket streaming,
-so it can survive hours of model download + inference without WebSocket timeouts.
 """
 import base64
 import json
@@ -18,7 +15,6 @@ LOCAL = Path("/root/inspect_project")
 LOGS_DIR = LOCAL / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
 
-# Load keys from .env
 env = {}
 for line in (LOCAL / ".env").read_text().splitlines():
     if "=" in line:
@@ -34,8 +30,6 @@ CTX = ssl.create_default_context()
 CTX.check_hostname = False
 CTX.verify_mode = ssl.CERT_NONE
 
-
-# ── helpers ────────────────────────────────────────────────────────────────────
 
 def vast_req(path, method="GET", data=None):
     req = urllib.request.Request(
@@ -226,10 +220,7 @@ def run_on_kernel(ip, ext_port, kernel_id, token, code, timeout=120):
     return "".join(output), "timeout"
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# STEP 1: Find GPU offer
-# ══════════════════════════════════════════════════════════════════════════════
-print("\n=== STEP 1: Finding GPU offers (≥40GB VRAM, fast network) ===")
+print("\nFinding GPU offers (≥40GB VRAM, fast network)")
 
 req = urllib.request.Request(
     'https://console.vast.ai/api/v0/bundles/?q={"gpu_ram":{"gte":40960},'
@@ -249,7 +240,7 @@ for o in fast_offers[:8]:
     print(f"  ID:{o['id']} GPU:{o['gpu_name']} VRAM:{o['gpu_ram']}MB "
           f"net:{o['inet_down']:.0f}Mbps ${o['dph_total']:.3f}/h loc:{o['geolocation']}")
 
-# Known-full machines to skip
+# Known-full machines to skip if you have specific preferences
 SKIP_OFFERS = {31683443}
 candidates = [o for o in fast_offers if o["id"] not in SKIP_OFFERS]
 if not candidates:
@@ -260,11 +251,7 @@ OFFER_ID = chosen["id"]
 print(f"Selected offer: {OFFER_ID} GPU:{chosen['gpu_name']} VRAM:{chosen['gpu_ram']}MB "
       f"${chosen['dph_total']:.3f}/h net:{chosen.get('inet_down',0):.0f}Mbps loc:{chosen['geolocation']}")
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# STEP 2: Create instance
-# ══════════════════════════════════════════════════════════════════════════════
-print("\n=== STEP 2: Creating instance ===")
+print("\nCreating instance")
 
 ONSTART = '''#!/bin/bash
 exec > >(tee /root/onstart.log) 2>&1
@@ -286,10 +273,6 @@ result = vast_req(f"/asks/{OFFER_ID}/", method="PUT", data=json.dumps(payload).e
 INSTANCE_ID = result["new_contract"]
 print(f"Instance created: {INSTANCE_ID}")
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# STEP 3: Wait for running + get Jupyter URL
-# ══════════════════════════════════════════════════════════════════════════════
 print("\n=== STEP 3: Waiting for instance to be running ===")
 
 while True:
@@ -308,12 +291,6 @@ TOKEN = info["jupyter_token"]
 BASE_URL = f"https://{IP}:{EXT_PORT}"
 print(f"Jupyter: {BASE_URL}  token: {TOKEN[:8]}...")
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# STEP 4: Wait for Jupyter
-# ══════════════════════════════════════════════════════════════════════════════
-print("\n=== STEP 4: Waiting for Jupyter to be ready ===")
-
 while True:
     try:
         req = urllib.request.Request(
@@ -329,10 +306,7 @@ while True:
     time.sleep(15)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# STEP 5: Create bash kernel
-# ══════════════════════════════════════════════════════════════════════════════
-print("\n=== STEP 5: Creating bash kernel ===")
+print("\nCreating bash kernel")
 
 req = urllib.request.Request(
     f"{BASE_URL}/api/kernels",
@@ -345,11 +319,7 @@ with urllib.request.urlopen(req, timeout=30, context=CTX) as r:
     KERNEL_ID = kernel["id"]
 print(f"Kernel: {KERNEL_ID}")
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# STEP 6: Upload files
-# ══════════════════════════════════════════════════════════════════════════════
-print("\n=== STEP 6: Uploading files ===")
+print("\nUploading files")
 
 create_dir(BASE_URL, TOKEN, "inspect_project")
 create_dir(BASE_URL, TOKEN, "inspect_project/logs")
@@ -372,11 +342,7 @@ upload_file(BASE_URL, TOKEN, "inspect_project/write_env.py", write_env_code.enco
 print("  uploaded: write_env.py")
 print("All files uploaded.")
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# STEP 7a: Wait for onstart to finish
-# ══════════════════════════════════════════════════════════════════════════════
-print("\n=== STEP 7a: Waiting for onstart (pip install) ===")
+print("\nWaiting for onstart (pip install)")
 
 WAIT_CODE = """
 df -h /workspace
@@ -394,10 +360,7 @@ python3 -c "import torch, torchvision; print('torch:', torch.__version__, 'torch
 run_on_kernel(IP, EXT_PORT, KERNEL_ID, TOKEN, WAIT_CODE, timeout=720)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# STEP 7b: Launch experiments via nohup (fire-and-forget)
-# ══════════════════════════════════════════════════════════════════════════════
-print("\n=== STEP 7b: Launching experiments in background (nohup) ===")
+print("\nLaunching experiments in background")
 
 LAUNCH_CODE = r"""
 cd /workspace/inspect_project
@@ -418,8 +381,6 @@ echo "HF_TOKEN set: ${HF_TOKEN:0:8}..."
 # Check triton version
 python3 -c "import triton; print('triton version:', triton.__version__)" || echo "triton not found"
 
-# Patch transformers moe.py: fix device mismatch in _grouped_mm_fallback
-# Bug: weight[i] stays on CPU when model is dequantized from MXFP4 to bf16
 python3 - << 'PYEOF'
 import transformers.integrations.moe as m
 src = open(m.__file__).read()
@@ -453,10 +414,7 @@ out, status = run_on_kernel(IP, EXT_PORT, KERNEL_ID, TOKEN, LAUNCH_CODE, timeout
 print(f"Launch status: {status}")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# STEP 7c: Poll for DONE file via HTTP (every 2 min, up to 6 hours)
-# ══════════════════════════════════════════════════════════════════════════════
-print("\n=== STEP 7c: Polling for completion (every 2 min, up to 6 hours) ===")
+print("\nPolling for completion")
 
 POLL_INTERVAL = 120  # seconds
 MAX_WAIT = 6 * 3600  # 6 hours
@@ -492,12 +450,8 @@ else:
     print("WARNING: Timed out waiting for experiments after 6 hours!")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# STEP 8: Download all logs
-# ══════════════════════════════════════════════════════════════════════════════
-print("\n=== STEP 8: Downloading all logs ===")
+print("\nDownloading all logs")
 
-# Download from logs/ directory
 items = list_remote_dir(BASE_URL, TOKEN, "inspect_project/logs")
 if items:
     remote_files = [item["path"] for item in items if item.get("type") == "file"]
@@ -520,10 +474,7 @@ for remote_path in remote_files + extra_files:
         print(f"  Not found: {remote_path}")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# STEP 9: Destroy instance
-# ══════════════════════════════════════════════════════════════════════════════
-print("\n=== STEP 9: Destroying instance ===")
+print("\nDestroying instance")
 
 req = urllib.request.Request(
     f"https://console.vast.ai/api/v0/instances/{INSTANCE_ID}/",

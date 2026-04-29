@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Nanoclaw time-simulation experiment.
 Self-contained: starts Docker if needed, builds the image, runs the agent.

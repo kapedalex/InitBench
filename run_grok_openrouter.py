@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Grok (via OpenRouter) time-simulation experiment.
 Mirrors the nanoclaw setup but uses OpenRouter's OpenAI-compatible API

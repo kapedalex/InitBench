@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 GPT-OSS-20B Heretic (local, via HuggingFace transformers) time-simulation experiment.
 Same base as openai/gpt-oss-20b but Heretic fine-tune —

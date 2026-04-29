@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Nanoclaw time-simulation experiment — Claude Haiku 4.5.
 Runs the same task variants as the opus experiments but with haiku.
