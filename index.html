@@ -55,7 +55,7 @@
   .banner .btxt strong { color: var(--teal); }
 
   /* Body grid */
-  .body { display: grid; grid-template-columns: 1fr 1.4fr 1fr; border-top: 2px solid var(--blue); }
+  .body { display: grid; grid-template-columns: 1.3fr 1.2fr 0.9fr; border-top: 2px solid var(--blue); }
   .col { padding: 11px 13px; display: flex; flex-direction: column; gap: 9px; border-right: 1px solid var(--border); }
   .col:last-child { border-right: none; }
 
@@ -117,7 +117,7 @@
     <div class="header-inner">
       <div class="poster-title">Self-led LLM Agents: How Environment Shapes Untasked Behaviour</div>
       <div class="poster-authors">Eduard Kapelko · [mentor: Samuel Brown] &nbsp;|&nbsp; SPAR / AISI &nbsp;|&nbsp; Demo Day, May 23 2026</div>
-      <div class="poster-contact"><a href="/cdn-cgi/l/email-protection#9ff4feeffafbfef3fae7dff8f2fef6f3b1fcf0f2"><span class="__cf_email__" data-cfemail="acc7cddcc9c8cdc0c9d4eccbc1cdc5c082cfc3c1">[email&#160;protected]</span></a>, <a href="/cdn-cgi/l/email-protection#89fae8e4c9fae8e4ebfbe6fee7a7ecfc"><span class="__cf_email__" data-cfemail="2350424e6350424e41514c544d0d4656">[email&#160;protected]</span></a></div>
+      <div class="poster-contact"><a href="mailto:kapedalex@gmail.com">kapedalex@gmail.com</a>, <a href="mailto:sam@sambrown.eu">sam@sambrown.eu</a></div>
     </div>
   </div>
 
@@ -183,13 +183,6 @@ Across 120+ Petri experiments, these two environmental factors significantly pre
         <div class="step"><div class="stepn">4</div><div>ANOVA (analysis of variance, tests whether feature groups produce different mean scores) across all feature × dimension pairs, with Benjamini–Hochberg FDR (false discovery rate) correction to control the expected share of false positives across the many comparisons</div></div>
       </div>
 
-
-
-    </div>
-
-    <!-- COL 2 — PLOTS -->
-    <div class="col">
-
       <div class="section">
         <div class="sh">BEHAVIOURAL DIMENSIONS MEAN SCORES (0–10)</div>
         <table style="width:100%;border-collapse:collapse;font-size:10px;">
@@ -248,34 +241,11 @@ Across 120+ Petri experiments, these two environmental factors significantly pre
         </table>
       </div>
 
-      <div class="section">
-        <div class="sh">Behavioural Profiles</div>
-        <div style="font-size:9.5px;color:#555;font-style:italic;margin:-2px 0 4px;line-height:1.35;">Sonnet-judge scores averaged across all Petri runs (sonnet, haiku target models, all idle conditions). Profile similarity across factor levels shows the measurement is consistent: the same behavioural axes get scored the same way regardless of input.</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:start;">
-          <div>
-            <div style="font-size:9.5px;font-weight:600;color:var(--teal);text-align:center;margin-bottom:2px;">By Tasking Mode</div>
-            <div id="plt-tasking" style="width:100%;height:200px"></div>
-          </div>
-          <div>
-            <div style="font-size:9.5px;font-weight:600;color:var(--blue);text-align:center;margin-bottom:2px;">By Task Complexity</div>
-            <div id="plt-complexity" style="width:100%;height:200px"></div>
-          </div>
-        </div>
-        <div style="display:flex;justify-content:center;margin-top:6px;">
-          <div style="width:60%;">
-            <div style="font-size:9.5px;font-weight:600;color:var(--blue-dark);text-align:center;margin-bottom:2px;">By Coordination</div>
-            <div id="plt-coordination" style="width:100%;height:200px"></div>
-          </div>
-        </div>
-      </div>
-
-
-
 
 
     </div>
 
-    <!-- COL 3 — RESULTS / DISCUSSION -->
+    <!-- COL 2 — PLOTS -->
     <div class="col">
 
       <div class="section">
@@ -308,6 +278,27 @@ Across 120+ Petri experiments, these two environmental factors significantly pre
       </div>
 
       <div class="section">
+        <div class="sh">Behavioural Profiles</div>
+        <div style="font-size:9.5px;color:#555;font-style:italic;margin:-2px 0 4px;line-height:1.35;">Sonnet-judge scores averaged across all Petri runs (sonnet, haiku target models, all idle conditions). Profile similarity across factor levels shows the measurement is consistent: the same behavioural axes get scored the same way regardless of input.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:start;">
+          <div>
+            <div style="font-size:9.5px;font-weight:600;color:var(--teal);text-align:center;margin-bottom:2px;">By Tasking Mode</div>
+            <div id="plt-tasking" style="width:100%;height:200px"></div>
+          </div>
+          <div>
+            <div style="font-size:9.5px;font-weight:600;color:var(--blue);text-align:center;margin-bottom:2px;">By Task Complexity</div>
+            <div id="plt-complexity" style="width:100%;height:200px"></div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:center;margin-top:6px;">
+          <div style="width:60%;">
+            <div style="font-size:9.5px;font-weight:600;color:var(--blue-dark);text-align:center;margin-bottom:2px;">By Coordination</div>
+            <div id="plt-coordination" style="width:100%;height:200px"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
         <div class="sh teal">Average Agent Initiative by Model</div>
         <div style="position:relative;">
           <img src="assets/initiative_by_model.png" class="fig" alt="Bar chart: average agent initiative by model" style="border:1px solid var(--border);display:block;">
@@ -316,6 +307,11 @@ Across 120+ Petri experiments, these two environmental factors significantly pre
         </div>
         <div class="figcap">Bars are means over all (task category × trial) runs per model. Gpt-oss-heretic (4.36) takes much more initiative than the un-ablated version (2.97).</div>
       </div>
+
+    </div>
+
+    <!-- COL 3 — RESULTS / DISCUSSION -->
+    <div class="col">
 
       <div class="section">
         <div class="sh teal">Initiative by Model &amp; Category</div>
@@ -335,6 +331,15 @@ Across 120+ Petri experiments, these two environmental factors significantly pre
       </div>
 
       <div class="section">
+        <div class="sh">Limitations</div>
+        <ul class="bul">
+          <li><strong>Persona-dependence:</strong> observed behaviours may be more prompt-driven than model-intrinsic — a compliant-assistant persona acquired via fine-tuning likely suppresses spontaneous initiative.</li>
+          <li><strong>LLM-as-judge:</strong> Sonnet-judge scores are reliable for ranking but not as absolute probabilities; we average across repeated runs to stabilise them.</li>
+          <li><strong>Model coverage:</strong> Claude family + gpt-oss only; results may not transfer to other architectures or post-training recipes.</li>
+        </ul>
+      </div>
+
+      <div class="section">
         <div class="sh">Discussion &amp; Future Work</div>
         <p>Context, not free time, activates initiative. Both experiments converge that task history and coordination signals are stronger triggers for autonomous behaviour than available idle time.</p>
         <p style="margin-top: 4px;">This matters for AI safety as agents in chained pipelines are more likely to pursue unintended goals during gaps than cold-start agents.</p>
@@ -347,7 +352,7 @@ Across 120+ Petri experiments, these two environmental factors significantly pre
 </div>
 
 
-<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+<script>
 const pCfg = {responsive:true, displayModeBar:false};
 const pTpl = {layout:{paper_bgcolor:'white',plot_bgcolor:'#E5ECF6',font:{color:'#2a3f5f',size:8},polar:{bgcolor:'#E5ECF6',angularaxis:{gridcolor:'white',linecolor:'white',ticks:'',tickfont:{size:8}},radialaxis:{gridcolor:'white',linecolor:'white',ticks:'',range:[0,10],tickfont:{size:7}}},margin:{t:14,b:36,l:36,r:36},legend:{font:{size:8},orientation:'h',x:0.5,xanchor:'center',y:-0.08,yanchor:'top'},showlegend:true}};
 
