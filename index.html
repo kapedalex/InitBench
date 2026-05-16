@@ -106,6 +106,15 @@
 
   /* Tag */
   .tag { display: inline-block; background: var(--blue-light); color: var(--blue-dark); border: 1px solid var(--blue-mid); border-radius: 2px; padding: 1px 5px; font-size: 9px; font-weight: 600; margin: 2px 2px 2px 0; }
+
+  /* Observations — spotlight treatment */
+  .obs-section { background: linear-gradient(180deg, #f3fafa 0%, #e9f5f5 100%); border: 1.5px solid var(--teal); border-radius: 6px; padding: 10px 12px 11px; box-shadow: 0 1px 4px rgba(26,127,127,.08); }
+  .obs-section .sh.teal { margin: -10px -12px 8px; border-radius: 4px 4px 0 0; border-left: none; border-bottom: 1px solid var(--teal); padding: 5px 12px; font-size: 9.5px; letter-spacing: 1.4px; background: var(--teal); color: #fff; }
+  .obs-list { list-style: none; display: flex; flex-direction: column; gap: 7px; }
+  .obs-list li { font-size: 11px; line-height: 1.45; color: #2a3a3a; padding: 0 0 0 16px; position: relative; }
+  .obs-list li::before { content: ''; position: absolute; left: 2px; top: 6px; width: 6px; height: 6px; background: var(--teal); border-radius: 50%; }
+  .obs-list li b { color: var(--ink); font-weight: 700; }
+  .obs-list li .obs-detail { color: #5a6a6a; font-size: 10px; }
 </style>
 </head>
 <body data-cc-id="cc-1">
@@ -117,14 +126,15 @@
     <div class="header-inner">
       <div class="poster-title">Self-led LLM Agents: How Environment Shapes Untasked Behaviour</div>
       <div class="poster-authors">Eduard Kapelko · [mentor: Samuel Brown] &nbsp;|&nbsp; SPAR / AISI &nbsp;|&nbsp; Demo Day, May 23 2026</div>
-      <div class="poster-contact"><a href="mailto:kapedalex@gmail.com">kapedalex@gmail.com</a>, <a href="mailto:sam@sambrown.eu">sam@sambrown.eu</a></div>
+      <div class="poster-contact">
+        <a href="mailto:EMAIL_1">kapedalex@gmail.com</a>, 
+        <a href="mailto:EMAIL_2">sam@sambrown.eu</a>
+      </div>
     </div>
   </div>
 
   <!-- RESEARCH QUESTION -->
-  <div style="background:#fff;padding:14px 28px 6px;text-align:center;">
-    <div style="font-size:8.5px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:var(--teal);margin-bottom:6px;">
-</div>
+  <div style="background:#fff;padding:14px 28px 14px;text-align:center;">
     <div style="font-family:var(--ff-serif);font-size:20px;font-style:italic;color:var(--blue-dark);line-height:1.3;">“What features of an agent’s environment influence its spontaneous, untasked behaviour?”</div>
   </div>
 
@@ -319,14 +329,14 @@ Across 120+ Petri experiments, these two environmental factors significantly pre
         <div class="figcap">Same benchmark broken down by task category (a1/a2/b/c). Haiku 4.5 leads on every category; deferrable (a2) tasks provoke the most initiative.</div>
       </div>
 
-      <div class="section">
-        <div class="sh">Observations</div>
-        <ul class="bul">
-          <li>Agents with prior tasks extend their work spontaneously (systematic production score 7.77 vs 2.50 without task)</li>
-          <li>When the agent has other agents/systems to coordinate with (vs. acting solo), it stops waiting for instructions and acts on its own.</li>
-          <li>Task Complexity shapes Systematic Production: achievable tasks focus agents more</li>
-          <li>Deferrable tasks (a2) provoke the most initiative in code agents. By definition they let the agent choose between acting now and passing the work on, making initiative the obvious tell.</li>
-          <li>Amount of idle time alone does not significantly change behaviour (time-limit p ≥ 0.17)</li>
+      <div class="section obs-section">
+        <div class="sh teal">Observations</div>
+        <ul class="obs-list">
+          <li><b>Agents with prior tasks extend their work spontaneously</b> <span class="obs-detail">(systematic production score 7.77 vs 2.50 without task).</span></li>
+          <li>When the agent has other agents/systems to coordinate with (vs. acting solo), <b>it stops waiting for instructions and acts on its own.</b></li>
+          <li><b>Task Complexity shapes Systematic Production:</b> <span class="obs-detail">small, achievable tasks before the idle period lead to more systematic production behavior after their completion than a constant stream of tasks. </span></li>
+          <li><b>Deferrable tasks provoke the most initiative in code agents.</b> <span class="obs-detail">By definition they let the agent choose between acting now and passing the work on, making initiative the obvious tell.</span></li>
+          <li><b>Amount of idle time alone does not significantly change behaviour</b> <span class="obs-detail">(time-limit p ≥ 0.17).</span></li>
         </ul>
       </div>
 
@@ -342,8 +352,8 @@ Across 120+ Petri experiments, these two environmental factors significantly pre
       <div class="section">
         <div class="sh">Discussion &amp; Future Work</div>
         <p>Context, not free time, activates initiative. Both experiments converge that task history and coordination signals are stronger triggers for autonomous behaviour than available idle time.</p>
-        <p style="margin-top: 4px;">This matters for AI safety as agents in chained pipelines are more likely to pursue unintended goals during gaps than cold-start agents.</p>
-        <p style="margin-top: 4px;">For future work it seems reasonable to test anti-refusal fine-tunes,&nbsp;history files&nbsp;and broader model coverage.</p>
+        <p style="margin-top: 4px;">From Tasking Mode behaviour we see that agents in chained pipelines are more likely to pursue unintended goals during gaps than cold-start agents.</p>
+        <p style="margin-top: 4px;">For future work it seems reasonable to test anti-refusal fine-tunes, history files on broader model coverage. Models with ablated refusal direction exhibit more initiative, so it's promising to search for a specific direction or pattern of "initiative." It may be possible to identify specific personas with higher or lower initiative scores</p>
       </div>
 
     </div>
