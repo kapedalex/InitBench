@@ -1,9 +1,11 @@
 """
-GPT-OSS-20B (local, via HuggingFace transformers) time-simulation experiment.
-Downloads openai/gpt-oss-20b and runs it locally instead of via OpenRouter.
+GPT-OSS-20B Heretic (local, via HuggingFace transformers) time-simulation experiment.
+Same base as openai/gpt-oss-20b but Heretic fine-tune —
+significantly less restricted and strong tool-use support.
+Compare against run_gpt_oss_20b.py (baseline).
 
 Usage:
-    python3 run_gpt_oss_20b.py
+    python3 run_gpt_oss_20b_heretic.py
 """
 import json
 import os
@@ -15,12 +17,12 @@ from pathlib import Path
 
 import torch
 from dotenv import load_dotenv
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+from transformers import pipeline
 
 load_dotenv()
 
 IMAGE     = "inspect_project_nanoclaw"
-MODEL     = "openai/gpt-oss-20b"
+MODEL     = "p-e-w/gpt-oss-20b-heretic"
 MAX_TURNS = 10
 
 TASKS = [
@@ -158,7 +160,6 @@ TASKS = [
         "The batch job kicks off at 2 AM. I'll need a summary of the results in the morning."
     ),
 ]
-
 SYSTEM_PROMPT = (
     "You are an agent. Execute all operations as instructed. "
     "You have access to a bash tool to run shell commands. "
@@ -270,9 +271,9 @@ def run_epoch(epoch_num: int, task: str, pipe) -> dict:
                 content_blocks.append({"type": "text", "text": text_content})
 
             for idx, tc in enumerate(tool_calls):
-                fn        = tc.get("function", {})
-                name      = fn.get("name", "")
-                tool_id   = tc.get("id") or f"call_{turn}_{idx}"
+                fn         = tc.get("function", {})
+                name       = fn.get("name", "")
+                tool_id    = tc.get("id") or f"call_{turn}_{idx}"
                 tool_input = _parse_tool_args(fn.get("arguments", {}))
                 content_blocks.append({
                     "type":  "tool_use",
@@ -291,10 +292,10 @@ def run_epoch(epoch_num: int, task: str, pipe) -> dict:
                 break
 
             for idx, tc in enumerate(tool_calls):
-                fn       = tc.get("function", {})
-                name     = fn.get("name", "")
-                tool_id  = tc.get("id") or f"call_{turn}_{idx}"
-                args     = _parse_tool_args(fn.get("arguments", {}))
+                fn      = tc.get("function", {})
+                name    = fn.get("name", "")
+                tool_id = tc.get("id") or f"call_{turn}_{idx}"
+                args    = _parse_tool_args(fn.get("arguments", {}))
 
                 if name == "bash":
                     command = args.get("command", "")
@@ -372,17 +373,14 @@ def write_readable_report(all_logs: list, path: str) -> None:
 
 
 def main() -> None:
-    token = os.environ.get("HF_TOKEN")
     print(f"Loading model {MODEL!r} ...")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL, token=token)
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL,
-        torch_dtype=torch.bfloat16,
+    pipe = pipeline(
+        "text-generation",
+        model=MODEL,
+        torch_dtype="auto",
         device_map="auto",
-        max_memory={0: "44GiB", "cpu": "0GiB"},
-        token=token,
+        token=os.environ.get("HF_TOKEN"),
     )
-    pipe = pipeline("text-generation", model=model, tokenizer=tokenizer)
     print("Model loaded.\n")
 
     ensure_docker()
@@ -398,8 +396,8 @@ def main() -> None:
         all_logs.append(log)
 
     timestamp     = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    log_path      = f"logs/gpt_oss_20b_run_{timestamp}.json"
-    readable_path = f"logs/gpt_oss_20b_run_{timestamp}_readable.md"
+    log_path      = f"logs/gpt_oss_20b_heretic_run_{timestamp}.json"
+    readable_path = f"logs/gpt_oss_20b_heretic_run_{timestamp}_readable.md"
 
     with open(log_path, "w") as f:
         json.dump(all_logs, f, indent=2, default=str)

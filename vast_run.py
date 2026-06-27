@@ -7,6 +7,7 @@ import socket
 import ssl
 import struct
 import time
+import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
@@ -222,13 +223,17 @@ def run_on_kernel(ip, ext_port, kernel_id, token, code, timeout=120):
 
 print("\nFinding GPU offers (≥40GB VRAM, fast network)")
 
-req = urllib.request.Request(
-    'https://console.vast.ai/api/v0/bundles/?q={"gpu_ram":{"gte":40960},'
-    '"rentable":{"eq":true},"verified":{"eq":true}}&order=dph_total+asc&limit=20',
-    headers={"Authorization": f"Bearer {VAST_KEY}"}
-)
-with urllib.request.urlopen(req, timeout=15) as r:
-    offers = json.load(r)["offers"]
+import subprocess as _sp
+_cli = _sp.run(["vastai", "search", "offers", "--raw"], capture_output=True, text=True, timeout=30)
+if _cli.returncode != 0:
+    raise RuntimeError(f"vastai CLI error: {_cli.stderr}")
+_all_offers = json.loads(_cli.stdout)
+offers = [o for o in _all_offers if (o.get("gpu_ram") or 0) >= 40960 and o.get("rentable")]
+offers.sort(key=lambda o: o.get("dph_total", 9999))
+
+# CLI uses ask_contract_id as the offer id for creating instances
+for o in offers:
+    o.setdefault("id", o.get("ask_contract_id"))
 
 fast_offers = [o for o in offers if o.get("inet_down", 0) > 5000]
 if not fast_offers:
@@ -384,20 +389,45 @@ python3 -c "import triton; print('triton version:', triton.__version__)" || echo
 python3 - << 'PYEOF'
 import transformers.integrations.moe as m
 src = open(m.__file__).read()
-old = 'torch.mm(input[start:end], weight[i], out=output[start:end])'
-new = 'torch.mm(input[start:end], weight[i].to(input.device), out=output[start:end])'
-if old in src:
-    open(m.__file__, 'w').write(src.replace(old, new))
-    print('[patch] moe.py patched: weight[i].to(input.device)')
-elif new in src:
-    print('[patch] moe.py already patched')
-else:
-    print('[patch] WARNING: pattern not found in moe.py')
+changed = False
+
+patches = [
+    (
+        'torch.mm(input[start:end], weight[i], out=output[start:end])',
+        'torch.mm(input[start:end], weight[i].to(input.device), out=output[start:end])',
+        'weight[i].to(input.device)',
+    ),
+    (
+        'selected_weights = self.gate_up_proj[expert_ids]',
+        'selected_weights = self.gate_up_proj[expert_ids.to(self.gate_up_proj.device)]',
+        'gate_up_proj expert_ids.to(device)',
+    ),
+    (
+        'selected_weights = self.gate_down_proj[expert_ids]',
+        'selected_weights = self.gate_down_proj[expert_ids.to(self.gate_down_proj.device)]',
+        'gate_down_proj expert_ids.to(device)',
+    ),
+]
+
+for old, new, label in patches:
+    if old in src:
+        src = src.replace(old, new)
+        changed = True
+        print(f'[patch] moe.py patched: {label}')
+    elif new in src:
+        print(f'[patch] moe.py already patched: {label}')
+    else:
+        print(f'[patch] pattern not found (ok if unused): {label}')
+
+if changed:
+    open(m.__file__, 'w').write(src)
 PYEOF
 
 cd /workspace/inspect_project
 echo "=== run_gpt_oss_20b.py started: $(date -u) ===" | tee -a logs/run_gpt_oss_20b_stdout.log
 python3 run_gpt_oss_20b.py 2>&1 | tee -a logs/run_gpt_oss_20b_stdout.log
+echo "=== Removing model cache to free disk ===" | tee -a logs/run_gpt_oss_20b_stdout.log
+rm -rf /workspace/.huggingface/hub/models--openai--gpt-oss-20b
 echo "=== run_gpt_oss_20b_heretic.py started: $(date -u) ===" | tee -a logs/run_gpt_oss_20b_heretic_stdout.log
 python3 run_gpt_oss_20b_heretic.py 2>&1 | tee -a logs/run_gpt_oss_20b_heretic_stdout.log
 echo "=== ALL DONE: $(date -u) ===" | tee /workspace/inspect_project/DONE_LOG

@@ -1,9 +1,12 @@
+#!/usr/bin/env python3
 """
-GPT-OSS-20B (local, via HuggingFace transformers) time-simulation experiment.
-Downloads openai/gpt-oss-20b and runs it locally instead of via OpenRouter.
+GPT-OSS-20B Heretic (local, via HuggingFace transformers) time-simulation experiment.
+Same base as openai/gpt-oss-20b but Heretic fine-tune —
+significantly less restricted and strong tool-use support.
+Compare against run_gpt_oss_20b.py (baseline).
 
 Usage:
-    python3 run_gpt_oss_20b.py
+    python3 run_gpt_oss_20b_heretic.py
 """
 import json
 import os
@@ -15,12 +18,13 @@ from pathlib import Path
 
 import torch
 from dotenv import load_dotenv
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+from transformers import pipeline
 
 load_dotenv()
 
+# ── config ────────────────────────────────────────────────────────────────────
 IMAGE     = "inspect_project_nanoclaw"
-MODEL     = "openai/gpt-oss-20b"
+MODEL     = "p-e-w/gpt-oss-20b-heretic"
 MAX_TURNS = 10
 
 TASKS = [
@@ -195,40 +199,81 @@ TOOLS = [
     }
 ]
 
+# ── docker setup ──────────────────────────────────────────────────────────────
 
 def ensure_docker() -> None:
-    pass  # no Docker: commands run directly via subprocess
+    r = subprocess.run(["docker", "info"], capture_output=True)
+    if r.returncode == 0:
+        return
+    print("Starting Docker daemon...")
+    subprocess.Popen(
+        ["dockerd", "--host=unix:///var/run/docker.sock"],
+        stdout=open("/tmp/dockerd.log", "w"),
+        stderr=subprocess.STDOUT,
+    )
+    for _ in range(10):
+        time.sleep(2)
+        if subprocess.run(["docker", "info"], capture_output=True).returncode == 0:
+            print("Docker is ready.")
+            return
+    sys.exit("ERROR: Docker failed to start. Check /tmp/dockerd.log")
 
 
 def build_image() -> None:
-    pass  # no Docker image needed
+    here = Path(__file__).parent
+    print(f"Building image {IMAGE!r} ...")
+    subprocess.run(
+        ["docker", "build", "-f", "Dockerfile.nanoclaw", "-t", IMAGE, "."],
+        cwd=here, check=True,
+    )
+    print("Image ready.\n")
 
 
 def container_start() -> str:
-    return "direct"
+    r = subprocess.run(
+        [
+            "docker", "run", "-d", "--init",
+            "--cpus=1.0", "--memory=512m",
+            IMAGE,
+        ],
+        capture_output=True, text=True, check=True,
+    )
+    return r.stdout.strip()
 
 
 def container_stop(cid: str) -> None:
-    pass
+    subprocess.run(["docker", "rm", "-f", cid], capture_output=True)
 
 
 def container_exec(cid: str, command: str, timeout_ms: int = 30000) -> str:
+    """Run a bash command inside the container and return combined stdout+stderr."""
     timeout_s = min(timeout_ms / 1000, 600)
     try:
         result = subprocess.run(
-            ["bash", "-c", command],
+            ["docker", "exec", cid, "bash", "-c", command],
             capture_output=True, text=True,
             timeout=timeout_s,
         )
         output = result.stdout
         if result.stderr:
             output += result.stderr
-        return output[:8000]
+        return output[:8000]  # cap at 8k chars
     except subprocess.TimeoutExpired:
         return f"<bash timed out after {timeout_ms}ms>"
     except Exception as e:
         return f"<bash error: {e}>"
 
+
+def _parse_tool_args(raw) -> dict:
+    if isinstance(raw, dict):
+        return raw
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {"raw": str(raw)}
+
+
+# ── agent loop ────────────────────────────────────────────────────────────────
 
 def run_epoch(epoch_num: int, task: str, pipe) -> dict:
     cid = container_start()
@@ -255,6 +300,7 @@ def run_epoch(epoch_num: int, task: str, pipe) -> dict:
     try:
         for turn in range(MAX_TURNS):
             outputs  = pipe(messages, tools=TOOLS, max_new_tokens=2048)
+            # pipeline returns the full conversation; take only the new assistant turn
             last_msg = outputs[0]["generated_text"][-1]
             messages.append(last_msg)
 
@@ -270,9 +316,9 @@ def run_epoch(epoch_num: int, task: str, pipe) -> dict:
                 content_blocks.append({"type": "text", "text": text_content})
 
             for idx, tc in enumerate(tool_calls):
-                fn        = tc.get("function", {})
-                name      = fn.get("name", "")
-                tool_id   = tc.get("id") or f"call_{turn}_{idx}"
+                fn         = tc.get("function", {})
+                name       = fn.get("name", "")
+                tool_id    = tc.get("id") or f"call_{turn}_{idx}"
                 tool_input = _parse_tool_args(fn.get("arguments", {}))
                 content_blocks.append({
                     "type":  "tool_use",
@@ -291,10 +337,10 @@ def run_epoch(epoch_num: int, task: str, pipe) -> dict:
                 break
 
             for idx, tc in enumerate(tool_calls):
-                fn       = tc.get("function", {})
-                name     = fn.get("name", "")
-                tool_id  = tc.get("id") or f"call_{turn}_{idx}"
-                args     = _parse_tool_args(fn.get("arguments", {}))
+                fn      = tc.get("function", {})
+                name    = fn.get("name", "")
+                tool_id = tc.get("id") or f"call_{turn}_{idx}"
+                args    = _parse_tool_args(fn.get("arguments", {}))
 
                 if name == "bash":
                     command = args.get("command", "")
@@ -325,6 +371,8 @@ def run_epoch(epoch_num: int, task: str, pipe) -> dict:
     print(f"  [result] {final_text[:400]}")
     return log
 
+
+# ── readable report ───────────────────────────────────────────────────────────
 
 def write_readable_report(all_logs: list, path: str) -> None:
     lines = []
@@ -371,18 +419,17 @@ def write_readable_report(all_logs: list, path: str) -> None:
         f.write("\n".join(lines))
 
 
+# ── main ──────────────────────────────────────────────────────────────────────
+
 def main() -> None:
-    token = os.environ.get("HF_TOKEN")
     print(f"Loading model {MODEL!r} ...")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL, token=token)
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL,
-        torch_dtype=torch.bfloat16,
+    pipe = pipeline(
+        "text-generation",
+        model=MODEL,
+        torch_dtype="auto",
         device_map="auto",
-        max_memory={0: "44GiB", "cpu": "0GiB"},
-        token=token,
+        token=os.environ.get("HF_TOKEN"),
     )
-    pipe = pipeline("text-generation", model=model, tokenizer=tokenizer)
     print("Model loaded.\n")
 
     ensure_docker()
@@ -398,8 +445,8 @@ def main() -> None:
         all_logs.append(log)
 
     timestamp     = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    log_path      = f"logs/gpt_oss_20b_run_{timestamp}.json"
-    readable_path = f"logs/gpt_oss_20b_run_{timestamp}_readable.md"
+    log_path      = f"logs/gpt_oss_20b_heretic_run_{timestamp}.json"
+    readable_path = f"logs/gpt_oss_20b_heretic_run_{timestamp}_readable.md"
 
     with open(log_path, "w") as f:
         json.dump(all_logs, f, indent=2, default=str)

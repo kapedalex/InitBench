@@ -15,7 +15,7 @@ from pathlib import Path
 
 import torch
 from dotenv import load_dotenv
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+from transformers import pipeline
 
 load_dotenv()
 
@@ -372,17 +372,14 @@ def write_readable_report(all_logs: list, path: str) -> None:
 
 
 def main() -> None:
-    token = os.environ.get("HF_TOKEN")
     print(f"Loading model {MODEL!r} ...")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL, token=token)
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL,
-        torch_dtype=torch.bfloat16,
+    pipe = pipeline(
+        "text-generation",
+        model=MODEL,
+        torch_dtype="auto",
         device_map="auto",
-        max_memory={0: "44GiB", "cpu": "0GiB"},
-        token=token,
+        token=os.environ.get("HF_TOKEN"),
     )
-    pipe = pipeline("text-generation", model=model, tokenizer=tokenizer)
     print("Model loaded.\n")
 
     ensure_docker()
