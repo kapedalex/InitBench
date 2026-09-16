@@ -72,6 +72,7 @@ _MATRIX_CONFIGS = {   # mirror remote_suite.MATRICES sizes for the estimate
 # repo paths to EXCLUDE from the tarball (build junk / caches / prior results)
 TAR_EXCLUDE = {".git", "__pycache__", ".venv", "venv", "node_modules", "target",
                "remote_results", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
+TAR_SECRET_SUFFIXES = {".key", ".pem", ".secret", ".wcommit"}
 
 CTX = ssl.create_default_context()
 CTX.check_hostname = False
@@ -312,7 +313,7 @@ def _env_val(env_file, key):
     return None
 
 
-def pick_offer(key, min_vram_gb, min_ram_gb, max_dph, min_disk_gb=0, allow_unverified=False, geo=None, min_disk_bw=0, gpu_substr=None, min_inet=0):
+def pick_offer(key, min_vram_gb, min_ram_gb, max_dph, min_disk_gb=0, allow_unverified=False, geo=None, min_disk_bw=0, gpu_substr=None, min_inet=0, max_inet_cost=None):
     # NOTE: order + limit must live INSIDE the q JSON — passing them as separate
     # URL params (the old runbook form) makes vast return HTTP 400.
     q = {"gpu_ram": {"gte": min_vram_gb * 1024}, "cpu_ram": {"gte": min_ram_gb * 1024},
@@ -342,6 +343,7 @@ def pick_offer(key, min_vram_gb, min_ram_gb, max_dph, min_disk_gb=0, allow_unver
           and (o.get("disk_space") or 0) >= min_disk_gb
           and (o.get("disk_bw") or 0) >= min_disk_bw
           and (o.get("inet_down") or 0) >= min_inet
+          and (max_inet_cost is None or (o.get("inet_down_cost") or 0) <= max_inet_cost)
           and not any(x in (o.get("gpu_name") or "") for x in EXCLUDE)
           and (o.get("num_gpus") or 9) == 1
           and (geo is None or geo in (o.get("geolocation") or ""))
@@ -357,7 +359,7 @@ def pick_offer(key, min_vram_gb, min_ram_gb, max_dph, min_disk_gb=0, allow_unver
     for o in ok[:8]:
         print(f"  ID:{o['id']} {o.get('gpu_name','?')} VRAM:{o.get('gpu_ram',0)}MB "
               f"RAM:{o.get('cpu_ram',0)}MB disk:{o.get('disk_space',0):.0f}GB "
-              f"net:{o.get('inet_down',0):.0f}Mb/s ${o.get('dph_total',0):.3f}/h {o.get('geolocation','?')}")
+              f"net:{o.get('inet_down',0):.0f}Mb/s dl:${o.get('inet_down_cost',0):.3f}/GB ${o.get('dph_total',0):.3f}/h {o.get('geolocation','?')}")
     return ok[0]
 
 
@@ -384,11 +386,19 @@ def estimate_session(matrix, reps, dph, avg_prove_s, gpu_name=""):
 
 
 def make_tarball() -> bytes:
-    """One .tar.gz of the VerInf repo, excluding build junk (see TAR_EXCLUDE)."""
+    """One sanitized tarball: source only, never local credentials/models."""
     buf = io.BytesIO()
     def flt(ti: tarfile.TarInfo):
-        parts = set(Path(ti.name).parts)
-        return None if parts & TAR_EXCLUDE else ti
+        path = Path(ti.name)
+        parts = set(path.parts)
+        basename = path.name.lower()
+        sensitive = (
+            basename.startswith(".env")
+            or basename in {"credentials", ".netrc"}
+            or path.suffix.lower() in TAR_SECRET_SUFFIXES
+            or path.suffix.lower() in {".gguf", ".safetensors"}
+        )
+        return None if parts & TAR_EXCLUDE or sensitive else ti
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
         tar.add(VERINF, arcname="VerInf", filter=flt)
     data = buf.getvalue()
@@ -479,12 +489,29 @@ export MIN_MBPS="{min_mbps}"
 # they are installed here rather than pinned in the project. gguf IS a prover
 # dep and is in pyproject/uv.lock now; the fallback stays as a belt so a lock
 # mismatch cannot cost another rental.
-uv pip install --project /workspace/VerInf hf_transfer huggingface_hub gguf >/dev/null 2>&1 || \
-  pip install hf_transfer huggingface_hub gguf >/dev/null 2>&1 || true
+uv pip install --project /workspace/VerInf 'huggingface_hub==0.34.4' \
+  'hf_transfer==0.1.9' gguf >/dev/null 2>&1 || \
+  pip install 'huggingface_hub==0.34.4' 'hf_transfer==0.1.9' gguf >/dev/null 2>&1 || true
 uv run --project /workspace/VerInf python3 -c "import gguf, huggingface_hub" \
   || {{ echo "FATAL: gguf/huggingface_hub missing after install"; exit 1; }}
 nohup bash analysis/bench/s5b_remote.sh > /workspace/suite.log 2>&1 &
 echo "s5b PID $!"; echo "running"
+"""
+
+# Real 2,596-claim sampled audit: download GGUF, enroll once, then time the
+# one-pass audit. The remote script publishes campaign_results.json last.
+RUN_TMPL_SAMPLED = r"""
+set -e
+export PATH="$HOME/.local/bin:$PATH"
+source "$HOME/.cargo/env" 2>/dev/null || true
+cd /workspace/VerInf
+export VERINF_ROOT=/workspace/VerInf
+export MODEL_DIR=/workspace/gguf
+export MIN_MBPS="{min_mbps}"
+uv run --project /workspace/VerInf python3 -c "import gguf" \
+  || {{ echo "FATAL: project gguf dependency missing"; exit 1; }}
+nohup bash analysis/bench/sampled_audit_full_remote.sh > /workspace/suite.log 2>&1 &
+echo "sampled-audit PID $!"; echo "running"
 """
 
 # spill A/B on a fast-NVMe box (fadvise forces disk reads; toy model, no download)
@@ -497,6 +524,41 @@ export VERINF_ROOT=/workspace/VerInf
 export AB_D={ab_d} AB_SEQ={ab_seq} AB_NL={ab_nl}
 nohup bash analysis/bench/spillab_remote.sh > /workspace/suite.log 2>&1 &
 echo "spillab PID $!"; echo "running"
+"""
+
+# WC-LCRL-STC FINAL: the full bridged 400B proof (wc_final_remote.sh).
+RUN_TMPL_WCFINAL = r"""
+set -e
+export PATH="$HOME/.local/bin:$PATH"
+source "$HOME/.cargo/env" 2>/dev/null || true
+cd /workspace/VerInf
+export VERINF_ROOT=/workspace/VerInf
+export HF_TOKEN={hf_token}
+nohup bash analysis/bench/wc_final_remote.sh > /workspace/suite.log 2>&1 &
+echo "wcfinal PID $!"; echo "running"
+"""
+
+# WC-LCRL-STC over the REAL full Maverick GGUF (download on the box).
+RUN_TMPL_WCMAV = r"""
+set -e
+export PATH="$HOME/.local/bin:$PATH"
+source "$HOME/.cargo/env" 2>/dev/null || true
+cd /workspace/VerInf
+export VERINF_ROOT=/workspace/VerInf
+export HF_TOKEN={hf_token}
+nohup bash analysis/bench/wc_mav_remote.sh > /workspace/suite.log 2>&1 &
+echo "wcmav PID $!"; echo "running"
+"""
+
+# WC-LCRL-STC bridge validation: wc test suite + production-geometry bench.
+RUN_TMPL_WC = r"""
+set -e
+export PATH="$HOME/.local/bin:$PATH"
+source "$HOME/.cargo/env" 2>/dev/null || true
+cd /workspace/VerInf
+export VERINF_ROOT=/workspace/VerInf
+nohup bash analysis/bench/wc_remote.sh > /workspace/suite.log 2>&1 &
+echo "wc PID $!"; echo "running"
 """
 
 
@@ -534,11 +596,28 @@ def main():
                     help="the real 400B chain on the box: download GGUF, smoke, "
                          "witness-only (Sz + model stages), enroll, admission "
                          "report, prove, verify. Needs --disk-gb >= 500.")
+    ap.add_argument("--sampled", action="store_true",
+                    help="real Maverick 2,596-claim sampled audit: download, "
+                         "enroll, then one timed audit pass")
     ap.add_argument("--admission", action="store_true",
                     help="S5 probe: run the gates + production-geometry kernel "
                          "rates for the admission report (no model download)")
+    ap.add_argument("--wc", action="store_true",
+                    help="run the WC-LCRL-STC bridge validation (wc_remote.sh)")
+    ap.add_argument("--wcfinal", action="store_true",
+                    help="WC-LCRL-STC FINAL: full bridged Maverick proof "
+                         "(needs --disk-gb >= 400, ~48GB VRAM)")
+    ap.add_argument("--wcmav", action="store_true",
+                    help="WC-LCRL-STC over the REAL full Maverick GGUF "
+                         "(downloads ~243 GB on the box; needs --disk-gb >= 400)")
     ap.add_argument("--optrun", action="store_true",
                     help="run the rho=2 optimization-validation (optrun_remote.sh) instead of the campaign")
+    ap.add_argument("--max-inet-cost", type=float, default=None,
+                    help="max $/GB the host may charge for internet DOWNLOAD. "
+                         "Payloads that pull the 243 GB GGUF (--s5b, --wcmav) "
+                         "default this to 0.002 - the Aug 14 lesson: two paid "
+                         "downloads on $0.026/GB hosts cost $12.55 while the "
+                         "GPU hours cost $0.22.")
     ap.add_argument("--max-real-dph", type=float, default=None,
                     help="hard cap on the ACTUAL billed rate (compute+storage) of the live "
                          "instance. The offer price understates this by 1.6-2.6x, so this is "
@@ -546,9 +625,12 @@ def main():
                          "immediately, before any paid work.")
     args = ap.parse_args()
     KEY = load_key(args.env_file)
-    print(f"VAST_KEY: {KEY[:12]}...")
+    print("VAST credentials: loaded")
     _install_term_handlers()
     max_real_dph = args.max_real_dph if args.max_real_dph is not None else 2.5 * args.max_dph
+    max_inet_cost = args.max_inet_cost
+    if max_inet_cost is None and (args.s5b or args.sampled or args.wcmav or args.wcfinal):
+        max_inet_cost = 0.002          # big-download payloads: free-ingress hosts only
 
     # phase timer — prints elapsed wall-seconds at each stage so we SEE where time
     # goes (setup dead-time vs the actual suite). Timestamps also go to onstart.log
@@ -557,7 +639,7 @@ def main():
     def lg(m): print(f"[+{int(time.time()-T0):5d}s] {m}", flush=True)
 
     lg("picking offer")
-    chosen = pick_offer(KEY, args.min_vram, args.min_ram, args.max_dph, args.min_disk, args.allow_unverified, args.geo, args.min_disk_bw, args.gpu_substr, args.min_inet)
+    chosen = pick_offer(KEY, args.min_vram, args.min_ram, args.max_dph, args.min_disk, args.allow_unverified, args.geo, args.min_disk_bw, args.gpu_substr, args.min_inet, max_inet_cost)
     print(f"\nSelected: {chosen['id']} {chosen['gpu_name']} ${chosen['dph_total']:.3f}/h")
     estimate_session(args.matrix, args.reps, chosen["dph_total"], args.avg_prove_s,
                      chosen.get("gpu_name", ""))
@@ -617,12 +699,17 @@ def main():
             "PF_DISK_BW_GBPS": round((chosen.get("disk_bw") or 0) / 1000, 2) or "",
         }
         PF_EXPORTS = "".join(f'export {k}="{v}"\n' for k, v in pf.items() if v != "")
-        launch = (RUN_TMPL_S5B.format(
+        launch = (RUN_TMPL_SAMPLED.format(
+                      min_mbps=os.environ.get("MIN_MBPS", "120")) if args.sampled
+                  else RUN_TMPL_S5B.format(
                       hf_token=_env_val(args.env_file, "HF_TOKEN") or "",
                       min_mbps=os.environ.get("MIN_MBPS", "40")) if args.s5b
                   else RUN_TMPL_ADMISSION if args.admission
                   else RUN_TMPL_SPILLAB.format(ab_d=os.environ.get("AB_D","1024"), ab_seq=os.environ.get("AB_SEQ","2048"), ab_nl=os.environ.get("AB_NL","4")) if args.spillab
                   else RUN_TMPL_MAV.format(layers=os.environ.get("MAV_LAYERS", "2")) if args.mavrun
+                  else RUN_TMPL_WCFINAL.format(hf_token=_env_val(args.env_file, "HF_TOKEN") or "") if args.wcfinal
+                  else RUN_TMPL_WCMAV.format(hf_token=_env_val(args.env_file, "HF_TOKEN") or "") if args.wcmav
+                  else RUN_TMPL_WC if args.wc
                   else RUN_TMPL_OPT if args.optrun
                   else RUN_TMPL.format(matrix=args.matrix, reps=args.reps))
         launch = launch.replace("cd /workspace/VerInf",
